@@ -1,0 +1,40 @@
+
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---- Theme tokens ---- */
+:root {
+  --bg:#0b0f14;
+  --surface:#0e141d;
+  --panel:#0f1520;
+  --muted:#9fb0c3;
+  --text:#e8eef6;
+  --line:#1e2633;
+  --accent:#6aa3ff;
+  --ok:#7bd389;
+  --warn:#ffcc66;
+  isolation: isolate;
+}
+
+html, body, #root { height: 100%; }
+body { background: var(--bg); color: var(--text); }
+
+/* Better default typography */
+@layer base {
+  html { @apply antialiased; }
+  h1 { @apply text-xl font-semibold; }
+  h2 { @apply text-lg font-semibold; }
+  p  { @apply leading-relaxed; }
+}
+
+/* Reusable UI primitives */
+@layer components {
+  .card { @apply rounded-2xl border border-[#1f2836] bg-[var(--panel)]; }
+  .btn  { @apply rounded-xl border border-slate-700 bg-[#1b2432] px-3 py-2 text-sm hover:border-slate-500; }
+  .btn-ghost { @apply rounded-lg px-2 py-1 text-sm text-[var(--muted)] hover:bg-[#151b26]; }
+  .pill { @apply rounded-full border border-slate-700 px-2 py-0.5 text-xs text-[var(--muted)] whitespace-nowrap; }
+  .input{ @apply rounded-xl border border-slate-700 bg-[var(--panel)] px-3 py-2 text-sm placeholder:text-slate-400; }
+  .chip { @apply rounded-full border border-[#37507a] px-2 py-1 text-xs text-[#bcd0ea] hover:bg-[#12233a]; }
+}
