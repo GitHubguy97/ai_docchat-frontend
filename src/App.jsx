@@ -13,7 +13,7 @@ export default function App() {
   const urlRef = useRef();
   
   // Use custom hooks
-  const { document, progress, status, message, uploadDocument, resetDocument } = useDocumentProcessing();
+  const { document, progress, status, message, uploadDocument, ingestUrl, resetDocument } = useDocumentProcessing();
   const { messages, isLoading, error, sendQuestion, clearChat } = useChat(document?.id);
 
   const onUpload = useCallback(async (file) => {
@@ -36,12 +36,40 @@ export default function App() {
     }
   }, [uploadDocument, resetDocument, clearChat]);
   
-  const onIngestUrl = useCallback((url) => {
+  const onIngestUrl = useCallback(async (url) => {
     if (!url) return;
-    // For now, just set PDF source for display
-    // TODO: Implement URL ingestion in backend
-    setPdfSource({ type: "url", src: url });
-  }, []);
+    
+    try {
+      // Reset previous document
+      resetDocument();
+      clearChat();
+      
+      // Ingest URL in backend
+      const result = await ingestUrl(url);
+      
+      // Create blob URL from PDF content if available
+      if (result.pdf_content) {
+        // Decode base64 content to binary
+        const binaryString = atob(result.pdf_content);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        
+        const blob = new Blob([bytes], { type: 'application/pdf' });
+        
+        // Set PDF source using the blob
+        setPdfSource({ type: "file", src: blob });
+      } else {
+        // Fallback to original URL (might not work due to CORS)
+        setPdfSource({ type: "url", src: url });
+      }
+      
+    } catch (error) {
+      console.error('URL ingestion error:', error);
+      // Error handling is done in the hook
+    }
+  }, [ingestUrl, resetDocument, clearChat]);
 
   const handlePdfReady = useCallback(() => {
     // Extract page texts after PDF is ready - with multiple attempts
@@ -94,7 +122,7 @@ export default function App() {
           <div className="h-14 flex items-center gap-3">
             {/* Left: Title */}
             <div className="font-semibold flex-shrink-0">
-              AI Document Chat
+              <span className="text-amber-400">Legal</span> AI Document Chat
             </div>
 
             {/* Center: Upload controls */}
@@ -129,11 +157,6 @@ export default function App() {
                   <span className="pill max-w-[150px] lg:max-w-[200px] truncate" title={document.title}>
                     {document.title}
                   </span>
-                  {pageTexts.length > 0 && (
-                    <span className="pill text-green-300 hidden sm:block">
-                      {pageTexts.length} pages
-                    </span>
-                  )}
                 </div>
               )}
               

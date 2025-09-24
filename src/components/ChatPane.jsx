@@ -102,17 +102,15 @@ export default function ChatPane({
                     <button
                       key={j}
                       onClick={() => {
-                        console.log(`Citation clicked: page ${c.page}, exactText:`, c.exactText);
-                        onCitationClick?.({ page: c.page, quote: c.exactText });
+                        console.log(`Citation clicked: page ${c.page}, exactText:`, c.exactText, `searchPages:`, c.searchPages);
+                        onCitationClick?.({ page: c.page, quote: c.exactText, searchPages: c.searchPages });
                       }}
                       className="group rounded-full border border-[#37507a] bg-[#1a2332] px-3 py-1.5 text-xs text-[#bcd0ea] hover:bg-[#12233a] hover:border-[#4a6fa5] transition-all duration-200 hover:scale-105"
                       title={`Click to go to page ${c.page} and highlight: "${c.exactText}"`}
                       type="button"
                     >
-                      <span className="font-medium">p.{c.page}</span>
-                      <span className="mx-1 text-[var(--muted)]">·</span>
-                      <span className="italic">"{c.exactText?.slice(0, 25) || 'Citation text'}
-                      {(c.exactText?.length || 0) > 25 ? "…" : ""}"</span>
+                      <span className="italic">"{c.exactText?.slice(0, 35) || 'Citation text'}
+                      {(c.exactText?.length || 0) > 35 ? "…" : ""}"</span>
                     </button>
                   ))}
                 </div>

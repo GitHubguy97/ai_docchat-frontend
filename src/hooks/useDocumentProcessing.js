@@ -54,6 +54,35 @@ export const useDocumentProcessing = () => {
     }
   }, [updateProgress]);
 
+  // Ingest URL
+  const ingestUrl = useCallback(async (url) => {
+    try {
+      updateProgress('uploading', 10);
+      setMessage('Downloading document from URL...');
+      
+      const result = await apiService.ingestUrl(url);
+      
+      setDocument({
+        id: result.document_id,
+        title: result.title || url.split('/').pop() || 'Downloaded Document',
+        status: 'queued'
+      });
+      
+      updateProgress('queued', 20);
+      setMessage('Document queued for processing...');
+      
+      // Start polling for job status
+      startJobPolling(result.document_id);
+      
+      // Return result with PDF content for frontend display
+      return result;
+    } catch (error) {
+      updateProgress('failed', 0);
+      setMessage(`URL ingestion failed: ${error.message}`);
+      throw error;
+    }
+  }, [updateProgress]);
+
   // Poll job status
   const startJobPolling = useCallback((jobId) => {
     const pollInterval = setInterval(async () => {
@@ -99,6 +128,7 @@ export const useDocumentProcessing = () => {
     status,
     message,
     uploadDocument,
+    ingestUrl,
     resetDocument,
     updateProgress
   };

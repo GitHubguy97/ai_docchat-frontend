@@ -51,6 +51,24 @@ class ApiService {
     return await response.json();
   }
 
+  // URL ingestion
+  async ingestUrl(url) {
+    const formData = new FormData();
+    formData.append('url', url);
+    
+    const response = await fetch(`${this.baseURL}/ingest`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `URL ingestion failed: ${response.statusText}`);
+    }
+
+    return await response.json();
+  }
+
   // Ask question
   async askQuestion(question, documentId) {
     return this.request('/ask', {

@@ -8,6 +8,7 @@ import React, {
   useState,
 } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
+import { getDocument } from "pdfjs-dist";
 
 // ✅ pdfjs-dist v5 uses an ESM worker: pdf.worker.min.mjs
 // Vite resolves it to a static URL with ?url so the worker loads reliably.
@@ -122,32 +123,54 @@ const PdfPane = forwardRef(function PdfPane({ source, onReady = () => {}, onFail
   }, [scale]);
 
   useImperativeHandle(ref, () => ({
-    jumpTo: ({ page: target, quote }) => {
-      const p = Math.min(Math.max(target || 1, 1), numPages || 1);
-      const el = pageRefs.current.get(p);
-      if (!el) {
-        console.log(`Page ${p} not found`);
+    jumpTo: ({ page: target, quote, searchPages }) => {
+      console.log(`🔍 Citation search requested:`, { quote: quote?.substring(0, 50) + "..." });
+      
+      // If no quote, just jump to page 1
+      if (!quote) {
+        const el = pageRefs.current.get(1);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
         return;
       }
+
+      console.log(`📄 Searching entire PDF for quote...`);
       
-      console.log(`Jumping to page ${p}${quote ? ` with quote: "${quote}"` : ''}`);
+      // Search all pages for the quote (ignore page numbers - they're wrong)
+      let foundPage = null;
+      for (let pageNum = 1; pageNum <= (numPages || 1); pageNum++) {
+        const el = pageRefs.current.get(pageNum);
+        
+        if (!el) {
+          continue;
+        }
+        
+        console.log(`🔍 Searching page ${pageNum}...`);
+        
+        // Try to highlight the quote on this page
+        const success = highlightQuote(pageNum, quote);
+        if (success) {
+          foundPage = pageNum;
+          console.log(`✅ Found and highlighted quote on page ${pageNum} - stopping search`);
+          
+          // Jump to the successful page with a small delay to ensure highlighting is visible
+          setTimeout(() => {
+            el.classList.add("ring-2", "ring-[var(--accent)]");
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+            setTimeout(() => el.classList.remove("ring-2", "ring-[var(--accent)]"), 3000);
+          }, 100);
+          break;
+        }
+      }
       
-      // Add visual ring to indicate page
-      el.classList.add("ring-2", "ring-[var(--accent)]");
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-      setTimeout(() => el.classList.remove("ring-2", "ring-[var(--accent)]"), 2000);
-      
-      // Highlight the quote if provided
-      if (quote) {
-        // Small delay to ensure page is rendered
-        setTimeout(() => {
-          const success = highlightQuote(p, quote);
-          if (success) {
-            console.log(`Successfully highlighted quote on page ${p}`);
-          } else {
-            console.log(`Failed to highlight quote on page ${p}`);
-          }
-        }, 300);
+      if (!foundPage) {
+        console.log(`⚠️ Quote not found on any page`);
+        // Still jump to page 1 as fallback
+        const el = pageRefs.current.get(1);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
       }
     },
     getPageTexts: () => {
@@ -186,100 +209,134 @@ const PdfPane = forwardRef(function PdfPane({ source, onReady = () => {}, onFail
       return false;
     }
     
-    const tl = host.querySelector(".react-pdf__Page__textContent");
-    if (!tl) {
+    console.log(`🔍 PDF text search on page ${p}:`, quote.substring(0, 50) + "...");
+
+    // Get the text layer element
+    const textLayer = host.querySelector(".react-pdf__Page__textContent");
+    if (!textLayer) {
       console.log(`No text layer found for page ${p}`);
       return false;
     }
-    
-    // Clear previous highlights
-    tl.querySelectorAll("[data-hl='1']").forEach((n) => {
-      n.removeAttribute("data-hl");
-      n.style.background = "transparent";
+
+    // Clear any existing highlights
+    textLayer.querySelectorAll('[data-pdf-highlight]').forEach(el => {
+      el.style.backgroundColor = '';
+      el.removeAttribute('data-pdf-highlight');
     });
-    
-    const q = norm(quote);
-    if (!q) {
-      console.log(`Empty quote after normalization`);
-      return false;
-    }
-    
-    console.log(`Searching for quote on page ${p}:`, q);
-    console.log(`Text layer has ${tl.children.length} children`);
-    
-    // Try multiple search strategies
-    const spans = Array.from(tl.querySelectorAll("span"));
-    console.log(`Found ${spans.length} text spans on page ${p}`);
-    
+
+    // Get all text spans
+    const spans = Array.from(textLayer.querySelectorAll('span'));
     if (spans.length === 0) {
       console.log(`No text spans found on page ${p}`);
       return false;
     }
+
+    console.log(`Found ${spans.length} text spans on page ${p}`);
+
+    // Normalize text for searching
+    const normalizeText = (text) => text.toLowerCase().replace(/\s+/g, ' ').replace(/[^\w\s]/g, ' ').trim();
     
-    // Log some sample text for debugging
-    const sampleText = spans.slice(0, 3).map(s => s.textContent).join(" ");
-    console.log(`Sample text from page ${p}:`, sampleText.substring(0, 100) + "...");
+    // Create a map of normalized text to original spans
+    const spanMap = spans.map(span => ({
+      element: span,
+      text: span.textContent,
+      normalized: normalizeText(span.textContent)
+    }));
+
+    // Get the full page text
+    const fullPageText = spanMap.map(s => s.normalized).join(' ');
+    const searchQuery = normalizeText(quote);
+
+    console.log(`Page text sample:`, fullPageText.substring(0, 100) + "...");
+    console.log(`Searching for:`, searchQuery);
+
+    // Try to find the quote in the page text
+    if (!fullPageText.includes(searchQuery.substring(0, Math.min(15, searchQuery.length)))) {
+      console.log(`❌ Quote not found on page ${p}`);
+      return false;
+    }
+
+    // Simple approach: Just find the exact text or 75% of it
+    const combinedText = spanMap.map(s => s.text).join(' ');
+    const combinedNormalized = normalizeText(combinedText);
     
+    console.log(`🔍 Looking for quote in combined text...`);
+
+    let highlightedSpans = 0;
+    let matchedText = '';
     let found = false;
+
+    // Try different lengths: 100%, 75%, 50% of the quote
+    const searchLengths = [1.0, 0.75, 0.5];
     
-    // Strategy 1: Look for exact match
-    for (const span of spans) {
-      if (norm(span.textContent).includes(q)) {
-        highlightSpan(span);
-        found = true;
-        console.log(`Found exact match in span:`, span.textContent);
-        break;
-      }
-    }
-    
-    // Strategy 2: Look for partial match with anchor
-    if (!found) {
-      const anchor = q.slice(Math.max(0, Math.floor(q.length / 2) - 7), Math.floor(q.length / 2) + 7);
-      console.log(`Trying anchor search with:`, anchor);
-      for (const span of spans) {
-        if (norm(span.textContent).includes(anchor)) {
-          highlightSpan(span);
-          found = true;
-          console.log(`Found anchor match in span:`, span.textContent);
-          break;
-        }
-      }
-    }
-    
-    // Strategy 3: Look for any word from the quote
-    if (!found) {
-      const words = q.split(' ').filter(w => w.length > 3);
-      console.log(`Trying word search with:`, words);
-      for (const word of words) {
-        for (const span of spans) {
-          if (norm(span.textContent).includes(word)) {
-            highlightSpan(span);
-            found = true;
-            console.log(`Found word match for "${word}" in span:`, span.textContent);
-            break;
+    for (const ratio of searchLengths) {
+      const searchLength = Math.floor(searchQuery.length * ratio);
+      const searchText = searchQuery.substring(0, searchLength);
+      
+      console.log(`🔎 Trying ${Math.round(ratio * 100)}% of quote (${searchLength} chars): "${searchText}"`);
+      
+      const matchIndex = combinedNormalized.indexOf(searchText);
+      
+      if (matchIndex !== -1) {
+        console.log(`✅ Found match at position ${matchIndex}!`);
+        
+        // Find which spans contain this match
+        let currentPos = 0;
+        const matchEnd = matchIndex + searchText.length;
+        
+        for (let i = 0; i < spanMap.length; i++) {
+          const span = spanMap[i];
+          const spanStart = currentPos;
+          const spanEnd = currentPos + span.normalized.length + 1; // +1 for space
+          
+          // Check if this span overlaps with our match
+          if (spanStart < matchEnd && spanEnd > matchIndex) {
+            span.element.style.backgroundColor = 'rgba(255, 235, 59, 0.8)';
+            span.element.style.borderRadius = '3px';
+            span.element.style.padding = '2px 3px';
+            span.element.style.border = '1px solid rgba(255, 193, 7, 0.6)';
+            span.element.setAttribute('data-pdf-highlight', 'true');
+            
+            highlightedSpans++;
+            matchedText += span.text + ' ';
+            console.log(`✅ Highlighted span ${i}:`, span.text.substring(0, 50) + "...");
           }
+          
+          currentPos = spanEnd;
         }
-        if (found) break;
+        
+        found = true;
+        break; // Stop after first successful match
       }
     }
     
-    if (found) {
-      console.log(`Successfully highlighted quote on page ${p}`);
-    } else {
-      console.log(`Could not find quote on page ${p}. Available text:`, spans.map(s => s.textContent).join(" ").substring(0, 200) + "...");
+    if (!found) {
+      console.log(`❌ No match found for any length of the quote`);
     }
-    
-    return found;
+
+    if (highlightedSpans > 0) {
+      console.log(`✅ Successfully highlighted ${highlightedSpans} spans on page ${p}`);
+      console.log(`Matched text:`, matchedText.substring(0, 100) + "...");
+      return true;
+    } else {
+      console.log(`❌ Could not highlight quote on page ${p}`);
+      return false;
+    }
   };
   
   const highlightSpan = (span) => {
+    console.log(`🎨 Highlighting span:`, span.textContent);
     [span.previousElementSibling, span, span.nextElementSibling]
       .filter(Boolean)
       .forEach((s) => {
         s.setAttribute("data-hl", "1");
-        s.style.background = "rgba(255,235,59,.35)";
-        s.style.borderRadius = "3px";
-        s.style.padding = "2px";
+        // Use more visible highlighting
+        s.style.backgroundColor = "rgba(255, 235, 59, 0.7)"; // More opaque yellow
+        s.style.borderRadius = "4px";
+        s.style.padding = "3px 2px";
+        s.style.border = "1px solid rgba(255, 193, 7, 0.8)"; // Yellow border
+        s.style.boxShadow = "0 0 3px rgba(255, 235, 59, 0.5)"; // Glow effect
+        console.log(`✅ Applied highlighting to:`, s.textContent?.substring(0, 30) + "...");
       });
   };
 
